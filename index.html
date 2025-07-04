@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trouve la bonne case</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    h1 {
+      color: #333;
+      font-size: 1.8em;
+      margin-bottom: 10px;
+    }
+    p#instruction {
+      font-size: 1.1em;
+      margin-bottom: 10px; /* Moins de marge pour faire de la place au minuteur */
+      color: #555;
+      min-height: 1.5em; /* Empêche le texte de sauter */
+    }
+    p#levelDisplay {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #007bff;
+        margin-top: 5px;
+        margin-bottom: 15px;
+    }
+    #timerDisplay { /* Style pour l'affichage du minuteur */
+        font-size: 1.3em;
+        font-weight: bold;
+        color: #d9534f; /* Rouge pour le minuteur */
+        margin-bottom: 20px;
+        min-height: 1.5em; /* Empêche le texte de sauter */
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 65px);
+      grid-gap: 8px;
+      justify-content: center;
+      margin-bottom: 20px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      background-color: #fff;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      width: fit-content;
+      max-width: 100%;
+    }
+    .cell {
+      width: 65px;
+      height: 65px;
+      background-color: #ccc;
+      border-radius: 10px;
+      cursor: pointer;
+      position: relative;
+      transition: background-color 0.15s ease-in-out; /* Transition plus rapide pour le clignotement */
+      user-select: none;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .cell span {
+      font-size: 20px;
+      font-weight: bold;
+      color: white;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .cell.active {
+      background-color: #1E90FF;
+    }
+    .cell.correct {
+      background-color: #28a745;
+    }
+    .cell.wrong {
+      background-color: #dc3545;
+    }
+    .cell.flash-repeat { /* Nouvelle classe pour indiquer une répétition */
+        animation: flashRepeat 0.6s infinite alternate; /* Animation de clignotement plus rapide */
+    }
+
+    @keyframes flashRepeat {
+        from { background-color: #1E90FF; }
+        to { background-color: #87CEFA; } /* Couleur plus claire pour l'effet de clignotement */
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 8px 5px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background-color: #007bff;
+      color: white;
+      transition: background-color 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      flex-shrink: 0;
+    }
+    button:hover:not(:disabled) {
+      background-color: #0056b3;
+    }
+    button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+    }
+
+    /* Media Queries pour les écrans plus grands */
+    @media (min-width: 768px) {
+        h1 {
+            font-size: 2.5em;
+        }
+        p#instruction, p#levelDisplay, #timerDisplay {
+            font-size: 1.2em;
+        }
+        .grid {
+            grid-template-columns: repeat(4, 80px);
+            grid-gap: 10px;
+            padding: 20px;
+        }
+        .cell {
+            width: 80px;
+            height: 80px;
+        }
+        .cell span {
+            font-size: 24px;
+        }
+        button {
+            padding: 12px 25px;
+            font-size: 18px;
+            margin: 10px 8px;
+        }
+    }
+  </style>
+</head>
+<body>
+  <h1>Trouve la bonne case !</h1>
+  <p id="instruction">Clique sur "Commencer" pour démarrer</p>
+  <p id="levelDisplay">Niveau : 0</p>
+  <p id="timerDisplay">Temps : --</p> <div class="grid" id="grid"></div>
+  
+  <div class="button-container">
+    <button id="startButton" onclick="startGame()">Commencer</button>
+    <button id="resetButton" onclick="resetGame()">Rejouer</button>
+  </div>
+
+  <script>
+    const gridSize = 4;
+    let sequence = [];
+    let playerIndex = 0;
+    let isPlayingSequence = false;
+    let currentLevel = 0;
+
+    // Variables pour le minuteur
+    let timerValue = 10; // Valeur initiale du minuteur
+    let timerInterval; // Pour stocker l'ID de l'intervalle du minuteur
+    const maxTimerValue = 20; // Valeur max que le minuteur peut atteindre
+
+    const grid = document.getElementById("grid");
+    const instruction = document.getElementById("instruction");
+    const levelDisplay = document.getElementById("levelDisplay");
+    const timerDisplay = document.getElementById("timerDisplay"); // Référence au minuteur
+    const startButton = document.getElementById("startButton");
+    const resetButton = document.getElementById("resetButton");
+
+    // Créer la grille
+    for (let i = 0; i < gridSize * gridSize; i++) {
+      const cell = document.createElement("div");
+      cell.classList.add("cell");
+      cell.dataset.index = i;
+      cell.addEventListener("click", handleClick);
+      grid.appendChild(cell);
+    }
+
+    // Initialisation au chargement
+    resetButton.disabled = true;
+    updateLevelDisplay();
+    updateTimerDisplay(); // Afficher le minuteur initial
+
+    function updateLevelDisplay() {
+        levelDisplay.textContent = `Niveau : ${currentLevel}`;
+    }
+
+    function updateTimerDisplay() {
+        timerDisplay.textContent = `Temps : ${timerValue}`;
+        if (timerValue <= 5 && timerValue > 0) { // Couleur rouge quand il reste peu de temps
+            timerDisplay.style.color = '#d9534f';
+        } else if (timerValue > 5) {
+            timerDisplay.style.color = '#28a745'; // Couleur verte si le temps est bon
+        }
+    }
+
+    function startTimer() {
+        clearInterval(timerInterval); // S'assurer qu'il n'y a qu'un seul timer
+        timerInterval = setInterval(() => {
+            if (isPlayingSequence) return; // Ne décrémente pas pendant la lecture de la séquence
+
+            timerValue--;
+            updateTimerDisplay();
+
+            if (timerValue <= 0) {
+                clearInterval(timerInterval);
+                gameOver(false); // Le joueur perd à cause du temps
+            }
+        }, 1000); // Décrémente toutes les secondes
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+    }
+
+    function resetGrid() {
+      const cells = document.querySelectorAll(".cell");
+      cells.forEach(cell => {
+        cell.className = "cell";
+        cell.innerHTML = "";
+        cell.style.backgroundColor = "";
+        cell.classList.remove('flash-repeat'); // Supprimer la classe de clignotement répétitif
+      });
+    }
+
+    function startGame() {
+      startButton.disabled = true;
+      resetButton.disabled = false;
+
+      resetGrid();
+      sequence = [];
+      playerIndex = 0;
+      currentLevel = 0;
+      timerValue = 10; // Réinitialise le minuteur au début
+      updateLevelDisplay();
+      updateTimerDisplay();
+      nextRound();
+    }
+
+    function resetGame() {
+      resetGrid();
+      sequence = [];
+      playerIndex = 0;
+      isPlayingSequence = false;
+      currentLevel = 0;
+      timerValue = 10; // Réinitialise le minuteur
+      updateLevelDisplay();
+      updateTimerDisplay();
+      instruction.textContent = "Clique sur 'Commencer' pour démarrer";
+      stopTimer(); // Arrête le minuteur si le jeu est réinitialisé
+
+      startButton.disabled = false;
+      resetButton.disabled = true;
+    }
+
+    function nextRound() {
+      resetGrid();
+      instruction.textContent = "🧠 Regarde bien...";
+      stopTimer(); // Arrête le minuteur pendant la lecture de la séquence
+      
+      const newIndex = Math.floor(Math.random() * (gridSize * gridSize));
+      sequence.push(newIndex);
+      isPlayingSequence = true; 
+      playerIndex = 0; 
+      currentLevel++; 
+      updateLevelDisplay(); 
+      playSequence(sequence);
+    }
+
+    function playSequence(seq) {
+      let i = 0;
+      const cells = document.querySelectorAll(".cell");
+
+      const sequenceInterval = setInterval(() => {
+        // Éteindre la cellule précédente (si elle n'est pas la même que la courante)
+        if (i > 0 && seq[i-1] !== seq[i]) {
+            cells[seq[i - 1]].classList.remove("active");
+            cells[seq[i - 1]].classList.remove("flash-repeat"); // S'assurer que l'animation s'arrête
+        }
+        
+        // Si la séquence est terminée
+        if (i === seq.length) {
+          clearInterval(sequenceInterval);
+          // Délai avant de passer au tour du joueur pour une meilleure transition
+          setTimeout(() => {
+            isPlayingSequence = false; // Autorise les clics du joueur
+            instruction.textContent = "👉 À toi de jouer !";
+            startTimer(); // Démarre le minuteur pour le tour du joueur
+          }, 500);
+          return;
+        }
+
+        const currentCell = cells[seq[i]];
+        currentCell.classList.add("active");
+
+        // Détecter si la même case se répète consécutivement
+        if (i > 0 && seq[i] === seq[i-1]) {
+            currentCell.classList.add('flash-repeat'); // Ajoute une animation pour indiquer la répétition
+        } else {
+            currentCell.classList.remove('flash-repeat'); // S'assurer qu'elle n'est pas là inutilement
+        }
+
+        // Éteindre la cellule après un court délai pour l'effet de clignotement
+        setTimeout(() => {
+            currentCell.classList.remove("active");
+            if (i > 0 && seq[i] === seq[i-1]) { // Garde l'animation de répétition si c'est une répétition
+                 currentCell.classList.add('flash-repeat');
+            } else {
+                 currentCell.classList.remove('flash-repeat');
+            }
+        }, 400); // La case reste allumée 400ms
+
+        i++;
+      }, 800); // Temps entre le début de chaque allumage de cellule
+    }
+
+    function handleClick(e) {
+      if (isPlayingSequence || startButton.disabled === false) return; // Désactiver les clics pendant la séquence ou avant le début
+
+      const index = parseInt(e.target.dataset.index);
+      const expected = sequence[playerIndex];
+      const cells = document.querySelectorAll(".cell");
+
+      if (index === expected) {
+        e.target.classList.add("correct");
+        // Incrémente le minuteur si la réponse est correcte, jusqu'à une valeur maximale
+        timerValue = Math.min(timerValue + 2, maxTimerValue); // +2 secondes par bonne réponse
+        updateTimerDisplay();
+
+        setTimeout(() => e.target.classList.remove("correct"), 300);
+        playerIndex++;
+
+        if (playerIndex === sequence.length) {
+          instruction.textContent = "✅ Bien joué ! Nouvelle séquence...";
+          stopTimer(); // Arrête le minuteur entre les tours
+          setTimeout(nextRound, 800); 
+        }
+      } else {
+        stopTimer(); // Arrête le minuteur
+        gameOver(true); // Le joueur perd à cause d'une mauvaise case
+      }
+    }
+
+    function gameOver(isWrongClick) {
+        isPlayingSequence = true; // Empêche les clics supplémentaires
+        startButton.disabled = true; // Empêche de commencer une nouvelle partie pendant l'animation
+        resetButton.disabled = true; // Empêche de rejouer pendant l'animation
+
+        if (isWrongClick) {
+            instruction.textContent = `❌ Perdu ! La séquence était :`;
+            alert(`Dommage ! Vous avez atteint le niveau ${currentLevel - 1}.`);
+        } else {
+            instruction.textContent = `⏰ Temps écoulé ! La séquence était :`;
+            alert(`Temps écoulé ! Vous avez atteint le niveau ${currentLevel - 1}.`);
+        }
+        
+        // Retirer toutes les classes d'état des cellules
+        const cells = document.querySelectorAll(".cell");
+        cells.forEach(c => {
+            c.classList.remove("active", "correct", "wrong", "flash-repeat");
+            c.innerHTML = "";
+            c.style.backgroundColor = ""; // Réinitialise les couleurs au cas où
+        });
+
+        // Animation de la séquence complète (1 à N)
+        let animationIndex = 0;
+        const solutionAnimationInterval = setInterval(() => {
+            if (animationIndex >= sequence.length) {
+                clearInterval(solutionAnimationInterval);
+                // Après l'animation, réinitialiser le jeu
+                setTimeout(() => {
+                    resetGame(); // Réinitialise le jeu et réactive les boutons
+                    startButton.disabled = false;
+                    resetButton.disabled = false;
+                }, 1000); // Laisse un peu de temps après l'animation finale
+                return;
+            }
+
+            const cellToShow = cells[sequence[animationIndex]];
+            cellToShow.innerHTML = `<span>${animationIndex + 1}</span>`; // Affiche le numéro d'ordre
+            cellToShow.style.backgroundColor = "#1E90FF"; // Couleur bleue pour la solution
+
+            setTimeout(() => {
+                // Pour que la case clignote, on éteint après un court délai
+                cellToShow.style.backgroundColor = "";
+            }, 500); // Chaque chiffre reste affiché 0.5s
+
+            animationIndex++;
+        }, 700); // Délai entre l'affichage de chaque chiffre de la solution
+    }
+  </script>
+</body>
+  </html>
+  
